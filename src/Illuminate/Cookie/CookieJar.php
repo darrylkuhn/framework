@@ -8,10 +8,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class CookieJar {
 
-	/*
+	/**
 	 * The current request instance.
 	 *
-	 * @var Symfony\Component\HttpFoundation\Request
+	 * @var \Symfony\Component\HttpFoundation\Request
 	 */
 	protected $request;
 
@@ -158,52 +158,6 @@ class CookieJar {
 	}
 
 	/**
-	 * Get the path and domain, or the default values.
-	 *
-	 * @param  string  $path
-	 * @param  string  $domain
-	 * @return array
-	 */
-	protected function getPathAndDomain($path, $domain)
-	{
-		return array($path ?: $this->path, $domain ?: $this->domain);
-	}
-
-	/**
-	 * Set the default path and domain for the jar.
-	 *
-	 * @param  string  $path
-	 * @param  string  $domain
-	 * @return void
-	 */
-	public function setDefaultPathAndDomain($path, $domain)
-	{
-		list($this->path, $this->domain) = array($path, $domain);
-
-		return $this;
-	}
-
-	/**
-	 * Get the request instance.
-	 *
-	 * @return \Symfony\Component\HttpFoundation\Request
-	 */
-	public function getRequest()
-	{
-		return $this->request;
-	}
-
-	/**
-	 * Get the encrypter instance.
-	 *
-	 * @return \Illuminate\Encryption\Encrypter
-	 */
-	public function getEncrypter()
-	{
-		return $this->encrypter;
-	}
-
-	/**
 	 * Queue a cookie to send with the next response.
 	 *
 	 * @param  dynamic
@@ -231,6 +185,52 @@ class CookieJar {
 	public function unqueue($name) 
 	{
 		unset($this->queued[$name]);
+	}
+
+	/**
+	 * Get the path and domain, or the default values.
+	 *
+	 * @param  string  $path
+	 * @param  string  $domain
+	 * @return array
+	 */
+	protected function getPathAndDomain($path, $domain)
+	{
+		return array($path ?: $this->path, $domain ?: $this->domain);
+	}
+
+	/**
+	 * Set the default path and domain for the jar.
+	 *
+	 * @param  string  $path
+	 * @param  string  $domain
+	 * @return self
+	 */
+	public function setDefaultPathAndDomain($path, $domain)
+	{
+		list($this->path, $this->domain) = array($path, $domain);
+
+		return $this;
+	}
+
+	/**
+	 * Get the request instance.
+	 *
+	 * @return \Symfony\Component\HttpFoundation\Request
+	 */
+	public function getRequest()
+	{
+		return $this->request;
+	}
+
+	/**
+	 * Get the encrypter instance.
+	 *
+	 * @return \Illuminate\Encryption\Encrypter
+	 */
+	public function getEncrypter()
+	{
+		return $this->encrypter;
 	}
 
 	/**

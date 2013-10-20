@@ -265,7 +265,7 @@ class View implements ArrayAccess, Renderable {
 	 *
 	 * @return mixed
 	 */
-	public function __get($key)
+	public function &__get($key)
 	{
 		return $this->data[$key];
 	}

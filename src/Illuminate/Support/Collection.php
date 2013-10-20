@@ -130,9 +130,20 @@ class Collection implements ArrayAccess, ArrayableInterface, Countable, Iterator
 	 * @param  mixed  $value
 	 * @return void
 	 */
-	public function push($value)
+	public function prepend($value)
 	{
 		array_unshift($this->items, $value);
+	}
+
+	/**
+	 * Push an item onto the end of the collection.
+	 *
+	 * @param  mixed  $value
+	 * @return void
+	 */
+	public function push($value)
+	{
+		$this->items[] = $value;
 	}
 
 	/**
@@ -342,6 +353,19 @@ class Collection implements ArrayAccess, ArrayableInterface, Countable, Iterator
 	public function slice($offset, $length = null, $preserveKeys = false)
 	{
 		return new static(array_slice($this->items, $offset, $length, $preserveKeys));
+	}
+
+	/**
+	 * Splice portion of the underlying collection array.
+	 *
+	 * @param  int    $offset
+	 * @param  int    $length
+	 * @param  mixed  $replacement
+	 * @return \Illuminate\Support\Collection
+	 */
+	public function splice($offset, $length = 0, $replacement = array())
+	{
+		array_splice($this->items, $offset, $length, $replacement);
 	}
 
 	/**

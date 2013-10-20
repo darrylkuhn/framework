@@ -32,7 +32,7 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	 *
 	 * @var string
 	 */
-	const VERSION = '4.0.8';
+	const VERSION = '4.1-dev';
 
 	/**
 	 * Indicates if the application has "booted".
@@ -54,6 +54,20 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	 * @var array
 	 */
 	protected $bootedCallbacks = array();
+
+	/**
+	 * The array of close callbacks.
+	 *
+	 * @var array
+	 */
+	protected $closeCallbacks = array();
+
+	/**
+	 * The array of finish callbacks.
+	 *
+	 * @var array
+	 */
+	protected $finishCallbacks = array();
 
 	/**
 	 * The array of shutdown callbacks.
@@ -122,20 +136,6 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	}
 
 	/**
-	 * Set the application request for the console environment.
-	 *
-	 * @return void
-	 */
-	public function setRequestForConsoleEnvironment()
-	{
-		$url = $this['config']->get('app.url', 'http://localhost');
-
-		$parameters = array($url, 'GET', array(), array(), array(), $_SERVER);
-
-		$this->instance('request', static::onRequest('create', $parameters));
-	}
-
-	/**
 	 * Redirect the request if it has a trailing slash.
 	 *
 	 * @return \Symfony\Component\HttpFoundation\RedirectResponse|null
@@ -149,12 +149,33 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 		// content in this application while still providing a solid experience.
 		$path = $this['request']->getPathInfo();
 
-		if ($path != '/' and ends_with($path, '/') and ! ends_with($path, '//'))
+		if ($this->hasTrailingSlash($path))
 		{
-			with(new SymfonyRedirect($this['request']->fullUrl(), 301))->send();
-
-			exit;
+			$this->redirectWithoutSlash();
 		}
+	}
+
+	/**
+	 * Determine if the given path has a trailing slash.
+	 *
+	 * @param  string  $path
+	 * @return string
+	 */
+	protected function hasTrailingSlash($path)
+	{
+		return ($path != '/' and ends_with($path, '/') and ! ends_with($path, '//'));
+	}
+
+	/**
+	 * Send a redirect response without the trailing slash.
+	 *
+	 * @return void
+	 */
+	protected function redirectWithoutSlash()
+	{
+		with(new SymfonyRedirect($this['request']->fullUrl(), 301))->send();
+
+		exit;
 	}
 
 	/**
@@ -167,6 +188,9 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	{
 		$this->instance('path', realpath($paths['app']));
 
+		// Here we will bind the install paths into the container as strings that can be
+		// accessed from any point in the system. Each path key is prefixed with path
+		// so that they have the consistent naming convention inside the container.
 		foreach (array_except($paths, array('app')) as $key => $value)
 		{
 			$this->instance("path.{$key}", realpath($value));
@@ -196,6 +220,16 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	}
 
 	/**
+	 * Attach the live debugger provider.
+	 *
+	 * @return void
+	 */
+	public function attachDebugger()
+	{
+		$this->register('Illuminate\Exception\LiveServiceProvider');
+	}
+
+	/**
 	 * Get or check the current application environment.
 	 *
 	 * @param  dynamic
@@ -214,6 +248,16 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	}
 
 	/**
+	 * Determine if application is in local environment.
+	 *
+	 * @return bool
+	 */
+	public function isLocal()
+	{
+		return $this['env'] == 'local';
+	}
+
+	/**
 	 * Detect the application's current environment.
 	 *
 	 * @param  array|string  $environments
@@ -221,87 +265,13 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	 */
 	public function detectEnvironment($environments)
 	{
-		$base = $this['request']->getHost();
+		$this['env'] = with(new EnvironmentDetector($this['request']))->detect(
 
-		$arguments = $this['request']->server->get('argv');
+			$environments, $this->runningInConsole()
 
-		if ($this->runningInConsole())
-		{
-			return $this->detectConsoleEnvironment($base, $environments, $arguments);
-		}
+		);
 
-		return $this->detectWebEnvironment($base, $environments);
-	}
-
-	/**
-	 * Set the application environment for a web request.
-	 *
-	 * @param  string  $base
-	 * @param  array|string  $environments
-	 * @return string
-	 */
-	protected function detectWebEnvironment($base, $environments)
-	{
-		// If the given environment is just a Closure, we will defer the environment
-		// detection to the Closure the developer has provided, which allows them
-		// to totally control the web environment detection if they require to.
-		if ($environments instanceof Closure)
-		{
-			return $this['env'] = call_user_func($environments);
-		}
-
-		foreach ($environments as $environment => $hosts)
-		{
-			// To determine the current environment, we'll simply iterate through the
-			// possible environments and look for a host that matches this host in
-			// the request's context, then return back that environment's names.
-			foreach ((array) $hosts as $host)
-			{
-				if (str_is($host, $base) or $this->isMachine($host))
-				{
-					return $this['env'] = $environment;
-				}
-			}
-		}
-
-		return $this['env'] = 'production';
-	}
-
-	/**
-	 * Set the application environment from command-line arguments.
-	 *
-	 * @param  string  $base
-	 * @param  mixed   $environments
-	 * @param  array   $arguments
-	 * @return string
-	 */
-	protected function detectConsoleEnvironment($base, $environments, $arguments)
-	{
-		foreach ($arguments as $key => $value)
-		{
-			// For the console environment, we'll just look for an argument that starts
-			// with "--env" then assume that it is setting the environment for every
-			// operation being performed, and we'll use that environment's config.
-			if (starts_with($value, '--env='))
-			{
-				$segments = array_slice(explode('=', $value), 1);
-
-				return $this['env'] = head($segments);
-			}
-		}
-
-		return $this->detectWebEnvironment($base, $environments);
-	}
-
-	/**
-	 * Determine if the name matches the machine name.
-	 *
-	 * @param  string  $name
-	 * @return bool
-	 */
-	protected function isMachine($name)
-	{
-		return str_is($name, gethostname());
+		return $this['env'];
 	}
 
 	/**
@@ -329,7 +299,7 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	 *
 	 * @param  \Illuminate\Support\ServiceProvider|string  $provider
 	 * @param  array  $options
-	 * @return void
+	 * @return \Illuminate\Support\ServiceProvider
 	 */
 	public function register($provider, $options = array())
 	{
@@ -351,9 +321,14 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 			$this[$key] = $value;
 		}
 
-		$this->serviceProviders[] = $provider;
+		$this->markAsRegistered($provider);
 
-		$this->loadedProviders[get_class($provider)] = true;
+		// If the application has already booted, we will call this boot method on
+		// the provider class so it has an opportunity to do its boot logic and
+		// will be ready for any usage by the developer's application logics.
+		if ($this->booted) $provider->boot();
+
+		return $provider;
 	}
 
 	/**
@@ -368,6 +343,19 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	}
 
 	/**
+	 * Mark the given provider as registered.
+	 *
+	 * @param  \Illuminate\Support\ServiceProvider
+	 * @return void
+	 */
+	protected function markAsRegistered($provider)
+	{
+		$this->serviceProviders[] = $provider;
+
+		$this->loadedProviders[get_class($provider)] = true;
+	}
+
+	/**
 	 * Load and boot all of the remaining deferred providers.
 	 *
 	 * @return void
@@ -377,11 +365,9 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 		// We will simply spin through each of the deferred providers and register each
 		// one and boot them if the application has booted. This should make each of
 		// the remaining services available to this application for immediate use.
-		foreach (array_unique($this->deferredServices) as $provider)
+		foreach ($this->deferredServices as $service => $provider)
 		{
-			$this->register($instance = new $provider($this));
-
-			if ($this->booted) $instance->boot();
+			$this->loadDeferredProvider($service);
 		}
 
 		$this->deferredServices = array();
@@ -402,25 +388,33 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 		// of deferred services, since it will already be loaded on subsequent.
 		if ( ! isset($this->loadedProviders[$provider]))
 		{
-			$this->register($instance = new $provider($this));
-
-			unset($this->deferredServices[$service]);
-
-			$this->setupDeferredBoot($instance);
+			$this->registerDeferredProvider($provider, $service);
 		}
 	}
 
 	/**
-	 * Handle the booting of a deferred service provider.
+	 * Register a deffered provider and service.
 	 *
-	 * @param  \Illuminate\Support\ServiceProvider  $instance
+	 * @param  string  $provider
+	 * @param  string  $service
 	 * @return void
 	 */
-	protected function setupDeferredBoot($instance)
+	public function registerDeferredProvider($provider, $service = null)
 	{
-		if ($this->booted) return $instance->boot();
+		$this->register($instance = new $provider($this));
 
-		$this->booting(function() use ($instance) { $instance->boot(); });
+		// Once the provider that provides the deferred service has been registered we
+		// will remove it from our local list of the deferred services with related
+		// providers so that this container does not try to resolve it out again.
+		if ($service) unset($this->deferredServices[$service]);
+
+		if ( ! $this->booted)
+		{
+			$this->booting(function() use ($instance)
+			{
+				$instance->boot();
+			});
+		}
 	}
 
 	/**
@@ -472,7 +466,7 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	 */
 	public function close($callback)
 	{
-		return $this['router']->close($callback);
+		$this->closeCallbacks[] = $callback;
 	}
 
 	/**
@@ -483,7 +477,7 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	 */
 	public function finish($callback)
 	{
-		$this['router']->finish($callback);
+		$this->finishCallbacks[] = $callback;
 	}
 
 	/**
@@ -505,61 +499,6 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	}
 
 	/**
-	 * Handles the given request and delivers the response.
-	 *
-	 * @return void
-	 */
-	public function run()
-	{
-		$response = $this->dispatch($this['request']);
-
-		$this['router']->callCloseFilter($this['request'], $response);
-
-		$response->send();
-
-		$this['router']->callFinishFilter($this['request'], $response);
-	}
-
-	/**
-	 * Handle the given request and get the response.
-	 *
-	 * @param  \Illuminate\Http\Request  $request
-	 * @return \Symfony\Component\HttpFoundation\Response
-	 */
-	public function dispatch(Request $request)
-	{
-		if ($this->isDownForMaintenance())
-		{
-			$response = $this['events']->until('illuminate.app.down');
-
-			if ( ! is_null($response)) return $this->prepareResponse($response, $request);
-		}
-		
-		return $this['router']->dispatch($this->prepareRequest($request));
-	}
-
-	/**
-	 * Handle the given request and get the response.
-	 *
-	 * Provides compatibility with BrowserKit functional testing.
-	 *
-	 * @implements HttpKernelInterface::handle
-	 *
-	 * @param  \Illuminate\Http\Request  $request
-	 * @param  int   $type
-	 * @param  bool  $catch
-	 * @return \Symfony\Component\HttpFoundation\Response
-	 */
-	public function handle(SymfonyRequest $request, $type = HttpKernelInterface::MASTER_REQUEST, $catch = true)
-	{
-		$this->instance('request', $request);
-
-		Facade::clearResolvedInstance('request');
-
-		return $this->dispatch($request);
-	}
-
-	/**
 	 * Boot the application's service providers.
 	 *
 	 * @return void
@@ -568,19 +507,23 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	{
 		if ($this->booted) return;
 
-		// To boot the application we will simply spin through each service provider
-		// and call the boot method, which will give them a chance to override on
-		// something that was registered by another provider when it registers.
-		foreach ($this->serviceProviders as $provider)
-		{
-			$provider->boot();
-		}
+		array_walk($this->serviceProviders, function($p) { $p->boot(); });
 
-		$this->fireAppCallbacks($this->bootingCallbacks);
+		$this->bootApplication();
+	}
 
+	/**
+	 * Boot the application and fire app callbacks.
+	 *
+	 * @return void
+	 */
+	protected function bootApplication()
+	{
 		// Once the application has booted we will also fire some "booted" callbacks
 		// for any listeners that need to do work after this initial booting gets
 		// finished. This is useful when ordering the boot-up processes we run.
+		$this->fireAppCallbacks($this->bootingCallbacks);
+
 		$this->booted = true;
 
 		$this->fireAppCallbacks($this->bootedCallbacks);
@@ -606,6 +549,114 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 	public function booted($callback)
 	{
 		$this->bootedCallbacks[] = $callback;
+	}
+
+	/**
+	 * Handles the given request and delivers the response.
+	 *
+	 * @return void
+	 */
+	public function run()
+	{
+		$response = $this->dispatch($this['request']);
+
+		$this->terminate($this['request'], $response);
+	}
+
+	/**
+	 * Handle the given request and get the response.
+	 *
+	 * Provides compatibility with BrowserKit functional testing.
+	 *
+	 * @implements HttpKernelInterface::handle
+	 *
+	 * @param  \Symfony\Component\HttpFoundation\Request  $request
+	 * @param  int   $type
+	 * @param  bool  $catch
+	 * @return \Symfony\Component\HttpFoundation\Response
+	 */
+	public function handle(SymfonyRequest $request, $type = HttpKernelInterface::MASTER_REQUEST, $catch = true)
+	{
+		$this->refreshRequest($request = Request::createFromBase($request));
+
+		return $this->dispatch($request);
+	}
+
+	/**
+	 * Handle the given request and get the response.
+	 *
+	 * @param  \Illuminate\Http\Request  $request
+	 * @return \Symfony\Component\HttpFoundation\Response
+	 */
+	public function dispatch(Request $request)
+	{
+		if ($this->isDownForMaintenance())
+		{
+			$response = $this['events']->until('illuminate.app.down');
+
+			if ( ! is_null($response)) return $this->prepareResponse($response, $request);
+		}
+
+		return $this['router']->dispatch($this->prepareRequest($request));
+	}
+
+	/**
+	 * Terminate the request and send the response to the browser.
+	 *
+	 * @param  \Symfony\Component\HttpFoundation\Request  $request
+	 * @param  \Symfony\Component\HttpFoundation\Response  $response
+	 * @return void
+	 */
+	public function terminate(SymfonyRequest $request, SymfonyResponse $response)
+	{
+		$this->callCloseCallbacks($request, $response);
+
+		$response->send();
+
+		$this->callFinishCallbacks($request, $response);
+	}
+
+	/**
+	 * Refresh the bound request instance in the container.
+	 *
+	 * @param  \Illuminate\Http\Request  $request
+	 * @return void
+	 */
+	protected function refreshRequest(Request $request)
+	{
+		$this->instance('request', $request);
+
+		Facade::clearResolvedInstance('request');
+	}
+
+	/**
+	 * Call the "close" callbacks assigned to the application.
+	 *
+	 * @param  \Symfony\Component\HttpFoundation\Request  $request
+	 * @param  \Symfony\Component\HttpFoundation\Response  $response
+	 * @return void
+	 */
+	public function callCloseCallbacks(SymfonyRequest $request, SymfonyResponse $response)
+	{
+		foreach ($this->closeCallbacks as $callback)
+		{
+			call_user_func($callback, $request, $response);
+		}
+	}
+
+	/**
+	 * Call the "finish" callbacks assigned to the application.
+	 *
+	 * @param  \Symfony\Component\HttpFoundation\Request  $request
+	 * @param  \Symfony\Component\HttpFoundation\Response  $response
+	 * @return void
+	 */
+	public function callFinishCallbacks(SymfonyRequest $request, SymfonyResponse $response)
+	{
+		foreach ($this->finishCallbacks as $callback)
+		{
+			call_user_func($callback, $request, $response);
+		}
 	}
 
 	/**
@@ -820,6 +871,20 @@ class Application extends Container implements HttpKernelInterface, ResponsePrep
 		if ( ! is_null($class)) static::$requestClass = $class;
 
 		return static::$requestClass;
+	}
+
+	/**
+	 * Set the application request for the console environment.
+	 *
+	 * @return void
+	 */
+	public function setRequestForConsoleEnvironment()
+	{
+		$url = $this['config']->get('app.url', 'http://localhost');
+
+		$parameters = array($url, 'GET', array(), array(), array(), $_SERVER);
+
+		$this->instance('request', static::onRequest('create', $parameters));
 	}
 
 	/**

@@ -128,9 +128,7 @@ class Handler {
 	{
 		if (error_reporting() & $level)
 		{
-			$e = new ErrorException($message, $level, 0, $file, $line);
-
-			throw $e;
+			throw new ErrorException($message, $level, 0, $file, $line);
 		}
 	}
 
@@ -286,7 +284,7 @@ class Handler {
 	{
 		$reflection = new ReflectionFunction($handler);
 
-		return $reflection->getNumberOfParameters() == 0 or $this->hints($reflection, $exception);
+		return $reflection->getNumberOfParameters() == 0 || $this->hints($reflection, $exception);
 	}
 
 	/**

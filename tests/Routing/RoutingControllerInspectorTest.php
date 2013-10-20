@@ -4,7 +4,7 @@ class RoutingControllerInspectorTest extends PHPUnit_Framework_TestCase {
 
 	public function testMethodsAreCorrectlyDetermined()
 	{
-		$inspector = new Illuminate\Routing\Controllers\Inspector;
+		$inspector = new Illuminate\Routing\ControllerInspector;
 		$data = $inspector->getRoutable('RoutingControllerInspectorStub', 'prefix');
 
 		$this->assertEquals(4, count($data));
@@ -17,7 +17,7 @@ class RoutingControllerInspectorTest extends PHPUnit_Framework_TestCase {
 
 	public function testMethodsAreCorrectWhenControllerIsNamespaced()
 	{
-		$inspector = new Illuminate\Routing\Controllers\Inspector;
+		$inspector = new Illuminate\Routing\ControllerInspector;
 		$data = $inspector->getRoutable('\\RoutingControllerInspectorStub', 'prefix');
 
 		$this->assertEquals(4, count($data));

@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\ConnectionResolverInterface as Resolver;
 
@@ -100,7 +101,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 
 	/**
 	 * The accessors to append to the model's array form.
-	 * 
+	 *
 	 * @var array
 	 */
 	protected $appends = array();
@@ -132,6 +133,13 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 	 * @var array
 	 */
 	protected $touches = array();
+
+	/**
+	 * User exposed observable events
+	 *
+	 * @var array
+	 */
+	protected $observables = array();
 
 	/**
 	 * The relations to eager load on every query.
@@ -195,6 +203,13 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 	 * @var array
 	 */
 	protected static $mutatorCache = array();
+
+	/**
+	 * The many to many relationship methods.
+	 *
+	 * @var array
+	 */
+	public static $manyMethods = array('belongsToMany', 'morphToMany', 'morphedByMany');
 
 	/**
 	 * The name of the "created at" column.
@@ -656,6 +671,9 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 	{
 		$instance = new $related;
 
+		// Here we will gather up the morph type and ID for the relationship so that we
+		// can properly query the intermediate table of a relation. Finally, we will
+		// get the table and create the relationship instances for the developers.
 		list($type, $id) = $this->getMorphs($name, $type, $id);
 
 		$table = $instance->getTable();
@@ -702,6 +720,66 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 	}
 
 	/**
+	 * Define a many-to-many relationship.
+	 *
+	 * @param  string  $related
+	 * @param  string  $name
+	 * @param  string  $table
+	 * @param  string  $foreignKey
+	 * @param  string  $otherKey
+	 * @param  bool  $inverse
+	 * @return \Illuminate\Database\Eloquent\Relations\MorphToMany
+	 */
+	public function morphToMany($related, $name, $table = null, $foreignKey = null, $otherKey = null, $inverse = false)
+	{
+		$caller = $this->getBelongsToManyCaller();
+
+		// First, we will need to determine the foreign key and "other key" for the
+		// relationship. Once we have determined the keys we will make the query
+		// instances, as well as the relationship instances we need for these.
+		$foreignKey = $foreignKey ?: $name.'_id';
+
+		$instance = new $related;
+
+		$otherKey = $otherKey ?: $instance->getForeignKey();
+
+		// Now we're ready to create a new query builder for this related model and
+		// the relationship instances for this relation. This relations will set
+		// appropriate query constraints then entirely manages the hydrations.
+		$query = $instance->newQuery();
+
+		$table = $table ?: str_plural($name);
+
+		return new MorphToMany(
+			$query, $this, $name, $table, $foreignKey,
+			$otherKey, $caller['function'], $inverse
+		);
+	}
+
+	/**
+	 * Define a many-to-many relationship.
+	 *
+	 * @param  string  $related
+	 * @param  string  $name
+	 * @param  string  $table
+	 * @param  string  $foreignKey
+	 * @param  string  $otherKey
+	 * @param  string  $morphClass
+	 * @return \Illuminate\Database\Eloquent\Relations\MorphToMany
+	 */
+	public function morphedByMany($related, $name, $table = null, $foreignKey = null, $otherKey = null)
+	{
+		$foreignKey = $foreignKey ?: $this->getForeignKey();
+
+		// For the inverse of the polymorphic many-to-many relations, we will change
+		// the way we determine the foreign and other keys, as it is the opposite
+		// of the morph-to-many method since we're figuring out these inverses.
+		$otherKey = $otherKey ?: $name.'_id';
+
+		return $this->morphToMany($related, $name, $table, $foreignKey, $otherKey, true);
+	}
+
+	/**
 	 * Get the relationship name of the belongs to many.
 	 *
 	 * @return  string
@@ -714,7 +792,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 		{
 			$caller = $trace['function'];
 
-			return $caller != 'belongsToMany' and $caller != $self;
+			return ( ! in_array($caller, Model::$manyMethods) and $caller != $self);
 		});
 	}
 
@@ -1016,10 +1094,13 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 	 */
 	public function getObservableEvents()
 	{
-		return array(
-			'creating', 'created', 'updating', 'updated',
-			'deleting', 'deleted', 'saving', 'saved',
-			'restoring', 'restored',
+		return array_merge(
+			array(
+				'creating', 'created', 'updating', 'updated',
+				'deleting', 'deleted', 'saving', 'saved',
+				'restoring', 'restored',
+			),
+			$this->observables
 		);
 	}
 
@@ -2014,7 +2095,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 			return array_intersect_key($values, array_flip($this->visible));
 		}
 
-		return array_diff_key($values, array_flip($this->hidden));	
+		return array_diff_key($values, array_flip($this->hidden));
 	}
 
 	/**
@@ -2240,7 +2321,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 		}
 
 		// If the value is in simply year, month, day format, we will instantiate the
-		// Carbon instances from that fomrat. Again, this provides for simple date
+		// Carbon instances from that format. Again, this provides for simple date
 		// fields on the database, while still supporting Carbonized conversion.
 		elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value))
 		{
@@ -2365,7 +2446,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
 
 	/**
 	 * Get all the loaded relations for the instance.
-	 * 
+	 *
 	 * @return array
 	 */
 	public function getRelations()

@@ -69,7 +69,7 @@ class SqlServerConnection extends Connection {
 	/**
 	 * Get the default post processor instance.
 	 *
-	 * @return \Illuminate\Database\Query\Processors\SqlServerProcessor
+	 * @return \Illuminate\Database\Query\Processors\Processor
 	 */
 	protected function getDefaultPostProcessor()
 	{

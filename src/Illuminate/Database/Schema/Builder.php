@@ -56,11 +56,24 @@ class Builder {
 	 */
 	public function hasColumn($table, $column)
 	{
-		$schema = $this->connection->getDoctrineSchemaManager();
+		$column = strtolower($column);
 
-		$columns = array_keys(array_change_key_case($schema->listTableColumns($table)));
+		return in_array($column, array_map('strtolower', $this->getColumnListing($table)));
+	}
 
-		return in_array(strtolower($column), $columns);
+	/**
+	 * Get the column listing for a given table.
+	 *
+	 * @param  string  $table
+	 * @return array
+	 */
+	protected function getColumnListing($table)
+	{
+		$table = $this->connection->getTablePrefix().$table;
+
+		$results = $this->connection->select($this->grammar->compileColumnExists($table));
+
+		return $this->connection->getPostProcessor()->processColumnListing($results);
 	}
 
 	/**
